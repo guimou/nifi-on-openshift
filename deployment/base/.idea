@@ -1,0 +1,250 @@
+Remove everything:
+------------------
+oc delete statefulset --all && oc delete deployment --all && oc delete pvc --all && oc delete route --all
+
+Install:
+--------
+oc apply -k .
+
+
+Test Deployment ODH base:
+--------------------
+kind: KfDef
+apiVersion: kfdef.apps.kubeflow.org/v1
+metadata:
+  name: nifi-single-user
+spec:
+  applications:
+    - kustomizeConfig:
+        parameters:
+          - name: storage_class
+            value: ocs-storagecluster-ceph-rbd
+          - name: admin_identity
+            value: admin
+          - name: admin_password
+            value: thisMustBeA12CharacterOrPlusPassword
+          - name: uid
+            value: 42559664-3d3a-4fa6-b619-93964710102d
+        repoRef:
+            name: manifests-guimou
+            path: nifi
+      name: nifi
+  repos:
+    - name: kf-manifests
+      uri: 'https://github.com/opendatahub-io/manifests/tarball/v1.3-openshift'
+    - name: manifests
+      uri: 'https://github.com/opendatahub-io/odh-manifests/tarball/v1.1.1'
+    - name: manifests-guimou
+      uri: 'https://github.com/guimou/odh-manifests/tarball/dev'
+
+
+
+Test Deployment ODH-Replica 1:
+--------------------
+kind: KfDef
+apiVersion: kfdef.apps.kubeflow.org/v1
+metadata:
+  name: nifi-replica1
+spec:
+  applications:
+    - kustomizeConfig:
+        overlays:
+          - replicas-1
+        parameters:
+          - name: storage_class
+            value: ocs-storagecluster-ceph-rbd
+          - name: admin_identity
+            value: admin
+          - name: admin_password
+            value: thisMustBeA12CharacterOrPlusPassword
+          - name: uid
+            value: 42559664-3d3a-4fa6-b619-93964710102d
+        repoRef:
+            name: manifests-guimou
+            path: nifi
+      name: nifi
+  repos:
+    - name: kf-manifests
+      uri: 'https://github.com/opendatahub-io/manifests/tarball/v1.3-openshift'
+    - name: manifests
+      uri: 'https://github.com/opendatahub-io/odh-manifests/tarball/v1.1.1'
+    - name: manifests-guimou
+      uri: 'https://github.com/guimou/odh-manifests/tarball/dev'
+
+Test Deployment OIDC:
+--------------------
+kind: KfDef
+apiVersion: kfdef.apps.kubeflow.org/v1
+metadata:
+  name: nifi-oidc
+spec:
+  applications:
+    - kustomizeConfig:
+        overlays:
+          - replicas-2
+          - oidc
+        parameters:
+          - name: storage_class
+            value: ocs-storagecluster-ceph-rbd
+          - name: admin_identity
+            value: gmoutier@redhat.com
+          - name: uid
+            value: 42559664-3d3a-4fa6-b619-93964710102d
+          - name: oidc_discovery_url
+            value: https://keycloak-keycloak.apps.cluster-qm5qx.qm5qx.sandbox925.opentlc.com/auth/realms/opendatahub/.well-known/openid-configuration
+          - name: oidc_client_id
+            value: nifi-client
+          - name: oidc_client_secret
+            value: FBPebK8Aa1k7oVq3LgHb6NdvOWdKayTU
+          - name: oidc_claim_identifying_user
+            value: email
+        repoRef:
+            name: manifests-guimou
+            path: nifi
+      name: nifi
+  repos:
+    - name: kf-manifests
+      uri: 'https://github.com/opendatahub-io/manifests/tarball/v1.3-openshift'
+    - name: manifests
+      uri: 'https://github.com/opendatahub-io/odh-manifests/tarball/v1.1.1'
+    - name: manifests-guimou
+      uri: 'https://github.com/guimou/odh-manifests/tarball/dev'
+
+
+Test Deployment ODH-LDAP:
+--------------------
+kind: KfDef
+apiVersion: kfdef.apps.kubeflow.org/v1
+metadata:
+  name: nifi-ldap
+spec:
+  applications:
+    - kustomizeConfig:
+        overlays:
+          - replicas-2
+          - ldap
+        parameters:
+          - name: storage_class
+            value: ocs-storagecluster-ceph-rbd
+          - name: admin_identity
+            value: guillaume
+          - name: uid
+            value: 42559664-3d3a-4fa6-b619-93964710102d
+          - name: ldap_host
+            value: ldap://freeipa-ldap.free-ipa.svc.cluster.local:389
+          - name: ldap_searchBase
+            value: cn=users,cn=accounts,dc=apps,dc=cluster-qm5qx,dc=qm5qx,dc=sandbox925,dc=opentlc,dc=com
+          - name: ldap_admin
+            value: uid=system,cn=sysaccounts,cn=etc,dc=apps,dc=cluster-qm5qx,dc=qm5qx,dc=sandbox925,dc=opentlc,dc=com
+          - name: ldap_pass
+            value: secret123
+          - name: ldap_searchFilter
+            value: (cn=ipausers)
+          - name: ldap_userIdentityAttribute
+            value: uid
+          - name: ldap_userIdentityMapping
+            value: ^uid=(.*?),cn=(.*?),cn=(.*?),dc=(.*?),dc=(.*?)
+        repoRef:
+            name: manifests-guimou
+            path: nifi
+      name: nifi
+  repos:
+    - name: kf-manifests
+      uri: 'https://github.com/opendatahub-io/manifests/tarball/v1.3-openshift'
+    - name: manifests
+      uri: 'https://github.com/opendatahub-io/odh-manifests/tarball/v1.1.1'
+    - name: manifests-guimou
+      uri: 'https://github.com/guimou/odh-manifests/tarball/dev'
+
+
+Debug Pod:
+----------
+apiVersion: v1
+kind: Pod
+metadata:
+  name: example
+  labels:
+    app: httpd
+  namespace: nifi
+spec:
+  serviceAccountName: nifi-sa
+  volumes:
+    - name: config-data
+      persistentVolumeClaim:
+        claimName: config-data-nifi-0
+    - name: "bootstrap-conf"
+      configMap:
+        name: nifi-config
+        items:
+          - key: "bootstrap.conf"
+            path: "bootstrap.conf"
+    - name: "nifi-properties"
+      configMap:
+        name: nifi-config
+        items:
+          - key: "nifi.properties"
+            path: "nifi.temp"
+    - name: "authorizers-temp"
+      configMap:
+        name: nifi-config
+        items:
+          - key: "authorizers.xml"
+            path: "authorizers.temp"
+    - name: "authorizers-empty"
+      configMap:
+        name: nifi-config
+        items:
+          - key: "authorizers-empty.xml"
+            path: "authorizers.empty"
+    - name: "bootstrap-notification-services-xml"
+      configMap:
+        name: nifi-config
+        items:
+          - key: "bootstrap-notification-services.xml"
+            path: "bootstrap-notification-services.xml"
+    - name: "login-identity-providers-temp"
+      configMap:
+        name: nifi-config
+        items:
+          - key: "login-identity-providers.xml"
+            path: "login-identity-providers.temp"
+    - name: "state-management-xml"
+      configMap:
+        name: nifi-config
+        items:
+          - key: "state-management.xml"
+            path: "state-management.xml"
+    - name: "zookeeper-properties"
+      configMap:
+        name: nifi-config
+        items:
+          - key: "zookeeper.properties"
+            path: "zookeeper.properties"
+    - name: "flow-content"
+      configMap:
+        name: nifi-config
+        items:
+          - key: "flow.xml"
+            path: "flow.xml"
+    - name: "hostconf"
+      emptyDir:
+        medium: Memory
+  containers:
+    - name: httpd
+      image: 'quay.io/openshift/origin-cli:4.9.0'
+      volumeMounts:
+            - name: 'config-data'
+              mountPath: /data/config-data
+            - name: "hostconf"
+              mountPath: /opt/nifi/hostconf
+      env:
+            - name: SERVICE_NAME
+              value: nifi
+            - name: ROUTE_NAME
+              value: nifi
+            - name: ROUTE_NAMESPACE
+              value: nifi
+            - name: CA_CERT_PATH
+              value: /data/config-data/certs/nifi-cert.pem
+      command: [ "/bin/bash", "-c", "--" ]
+      args: [ "while true; do sleep 30; done;" ]

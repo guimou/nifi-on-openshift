@@ -1,0 +1,181 @@
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: test-kustom
+resources:
+  - poddisruptionbudget.yaml
+  - serviceaccount-registry.yaml
+  - serviceaccount-nifi.yaml
+  - serviceaccount-nifi-ca.yaml
+  - pvc-nifi-ca.yaml
+  - configmap-nifi-config.yaml
+  - deployment-nifi-ca.yaml
+  - service-registry.yaml
+  - service-nifi-zookeeper-headless.yaml
+  - service-nifi-zookeeper.yaml
+  - service-nifi-headless.yaml
+  - service-nifi-ca.yaml
+  - service-nifi.yaml
+  - service-nifi-metrics.yaml
+  - ss-nifi-registry.yaml
+  - ss-nifi-zookeeper.yaml
+  - ss-nifi.yaml
+  - route-rbac.yaml
+
+commonLabels:
+  opendatahub.io/component: "true"
+  component.opendatahub.io/name: "nifi"
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+configMapGenerator:
+  - name: nifi-parameters
+    envs:
+      - params.env
+vars:
+  - name: namespace
+    objref:
+      kind: ConfigMap
+      name: nifi-parameters
+      apiVersion: v1
+    fieldref:
+      fieldpath: metadata.namespace
+  - name: storage_class
+    objref:
+      kind: ConfigMap
+      name: nifi-parameters
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.storage_class
+  - name: admin_identity
+    objref:
+      kind: ConfigMap
+      name: nifi-parameters
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.admin_identity
+  - name: admin_password
+    objref:
+      kind: ConfigMap
+      name: nifi-parameters
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.admin_password
+  - name: nodes_number
+    objref:
+      kind: ConfigMap
+      name: nifi-parameters
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.nodes_number
+  - name: uid
+    objref:
+      kind: ConfigMap
+      name: nifi-parameters
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.uid
+  - name: oidc_discovery_url
+    objref:
+      kind: ConfigMap
+      name: nifi-parameters
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.oidc_discovery_url
+  - name: oidc_client_id
+    objref:
+      kind: ConfigMap
+      name: nifi-parameters
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.oidc_client_id
+  - name: oidc_client_secret
+    objref:
+      kind: ConfigMap
+      name: nifi-parameters
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.oidc_client_secret
+  - name: oidc_claim_identifying_user
+    objref:
+      kind: ConfigMap
+      name: nifi-parameters
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.oidc_claim_identifying_user
+  - name: ldap_host
+    objref:
+      kind: ConfigMap
+      name: nifi-parameters
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.ldap_host
+  - name: ldap_searchBase
+    objref:
+      kind: ConfigMap
+      name: nifi-parameters
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.ldap_searchBase
+  - name: ldap_admin
+    objref:
+      kind: ConfigMap
+      name: nifi-parameters
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.ldap_admin
+  - name: ldap_pass
+    objref:
+      kind: ConfigMap
+      name: nifi-parameters
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.ldap_pass
+  - name: ldap_searchFilter
+    objref:
+      kind: ConfigMap
+      name: nifi-parameters
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.ldap_searchFilter
+  - name: ldap_userIdentityAttribute
+    objref:
+      kind: ConfigMap
+      name: nifi-parameters
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.ldap_userIdentityAttribute
+  - name: ldap_userIdentityMapping
+    objref:
+      kind: ConfigMap
+      name: nifi-parameters
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.ldap_userIdentityMapping
+
+configurations:
+  - params.yaml
+
+images:
+  - name: busybox
+    newName: busybox
+    newTag: 1.35.0
+  - name: alpine
+    newName: alpine
+    newTag: 3.15.0
+  - name: nifi
+    newName: quay.io/rh-data-services/nifi-openshift
+    newTag: 1.15.2
+  - name: nifi-registry
+    newName: quay.io/rh-data-services/nifi-registry-openshift
+    newTag: 1.15.2
+  - name: nifi-toolkit
+    newName: quay.io/rh-data-services/nifi-toolkit-openshift
+    newTag: 1.15.2
+  - name: zookeeper
+    newName: bitnami/zookeeper
+    newTag: 3.7.0-debian-10-r262
+  - name: oc-client
+    newName: quay.io/openshift/origin-cli
+    newTag: 4.9.0

@@ -1,0 +1,67 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nifi-registry
+  labels:
+    app.kubernetes.io/name: registry
+    app.kubernetes.io/instance: nifi
+    app.kubernetes.io/version: "1.15.2"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: registry
+      app.kubernetes.io/instance: nifi
+  serviceName: nifi-registry
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: registry
+        app.kubernetes.io/instance: nifi
+    spec:
+      serviceAccountName: nifi-registry
+      securityContext:
+        {}
+      containers:
+        - name: registry
+          securityContext:
+            {}
+          image: nifi-registry
+          imagePullPolicy: IfNotPresent
+          command:
+            - bash
+            - -ce
+            - |
+              NIFI_REGISTRY_WEB_HTTP_HOST=$(hostname -i) && ${NIFI_REGISTRY_BASE_DIR}/scripts/start.sh
+          ports:
+            - name: http
+              containerPort: 18080
+              protocol: TCP
+          volumeMounts:
+            - name: "database"
+              mountPath: /opt/nifi-registry/nifi-registry-current/database
+            - name: "flow-storage"
+              mountPath: /opt/nifi-registry/nifi-registry-current/flow_storage
+              subPath: flow_storage
+          resources: {}
+      volumes:
+  volumeClaimTemplates:
+    - metadata:
+        name: database
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: $(storage_class)
+        resources:
+          requests:
+            storage: "1Gi"
+    - metadata:
+        name: flow-storage
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        storageClassName: $(storage_class)
+        resources:
+          requests:
+            storage: "1Gi"

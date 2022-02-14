@@ -1,0 +1,15 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nifi
+  labels:
+    app: "nifi"
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9443
+      name: https
+      targetPort: 9443
+  selector:
+    app: nifi

@@ -1,0 +1,521 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nifi
+  labels:
+    app: "nifi"
+spec:
+  podManagementPolicy: Parallel
+  serviceName: nifi-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nifi
+  template:
+    metadata:
+      labels:
+        app: "nifi"
+    spec:
+      serviceAccountName: nifi-sa
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 1
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: "app"
+                      operator: In
+                      values:
+                        - "nifi"
+                topologyKey: "kubernetes.io/hostname"
+      terminationGracePeriodSeconds: 30
+      initContainers:
+        - name: zookeeper
+          imagePullPolicy: "IfNotPresent"
+          image: busybox
+          command:
+            - sh
+            - -c
+            - |
+              echo trying to contact nifi-zookeeper 2181
+              until nc -vzw 1 nifi-zookeeper 2181; do
+                echo "waiting for zookeeper..."
+                sleep 2
+              done
+        - name: registry
+          imagePullPolicy: "IfNotPresent"
+          image: busybox
+          command:
+            - sh
+            - -c
+            - |
+              echo trying to contact registry
+              until nc -vzw 1 nifi-registry 18080; do
+                echo "waiting for registry..."
+                sleep 2
+              done
+        - name: cert-request
+          imagePullPolicy: "IfNotPresent"
+          image: nifi-toolkit
+          command:
+            - bash
+            - -c
+            - |
+              CA_ADDRESS="nifi-ca:9090"
+              until echo "" | timeout 2 openssl s_client -connect "${CA_ADDRESS}"; do
+                # Checking if ca server using nifi-toolkit is up
+                echo "Waiting for CA to be available at ${CA_ADDRESS}"
+                sleep 2
+              done;
+
+              cd /data/config-data
+              rm -rf certs
+              mkdir certs
+              cd certs
+
+              # Generate certificate for server with webProxyHost or service name as alternate names to access nifi web ui
+              ${NIFI_TOOLKIT_HOME}/bin/tls-toolkit.sh client \
+                -c "nifi-ca" \
+                -t sixteenCharacters \
+                --subjectAlternativeNames nifi.$(namespace).svc \
+                -D "CN=$(hostname -f), OU=NIFI" \
+                -p 9090
+
+              # Generate client certificate for browser with webProxyHost or service name as alternate names to access nifi web ui
+              mkdir -p /data/config-data/certs/admin
+              cd /data/config-data/certs/admin
+
+              ${NIFI_TOOLKIT_HOME}/bin/tls-toolkit.sh client \
+                -c "nifi-ca" \
+                -t sixteenCharacters \
+                --subjectAlternativeNames nifi.$(namespace).svc \
+                -p 9090 \
+                -D "CN=admin, OU=NIFI" \
+                -T PKCS12
+
+              export PASS=$(jq -r .keyStorePassword config.json)
+
+              openssl pkcs12 -in "keystore.pkcs12" -out "key.pem" -nocerts -nodes -password "env:PASS"
+              openssl pkcs12 -in "keystore.pkcs12" -out "crt.pem" -clcerts -nokeys -password "env:PASS"
+              openssl pkcs12 -in "keystore.pkcs12" -out "keystore.jks" -clcerts -nokeys -password "env:PASS"
+          volumeMounts:
+            - name: "config-data"
+              mountPath: /data/config-data
+        - name: reencrypt-route
+          image: oc-client
+          imagePullPolicy: 'IfNotPresent'
+          env:
+            - name: SERVICE_NAME
+              value: nifi
+            - name: ROUTE_NAME
+              value: nifi
+            - name: ROUTE_NAMESPACE
+              value: $(namespace)
+            - name: CA_CERT_PATH
+              value: /data/config-data/certs/nifi-cert.pem
+          command:
+            - bash
+            - -c
+            - |
+              set -x
+              cat <<EOF > /tmp/nifi_route.yaml
+              apiVersion: route.openshift.io/v1
+              kind: Route
+              metadata:
+                name: ${ROUTE_NAME}
+              spec:
+                port:
+                  targetPort: https
+                tls:
+                  termination: Reencrypt
+                  insecureEdgeTerminationPolicy: Redirect
+                  destinationCACertificate: |-
+              $(sed 's/^/      /' ${CA_CERT_PATH})
+                to:
+                  kind: Service
+                  name: ${SERVICE_NAME}
+                  weight: 100
+                wildcardPolicy: None
+              EOF
+              oc apply -n ${ROUTE_NAMESPACE} -f /tmp/nifi_route.yaml
+              ROUTE_HOSTNAME=$(oc get route/${ROUTE_NAME} -n ${ROUTE_NAMESPACE} -o jsonpath="{.spec.host}")
+              echo ${ROUTE_HOSTNAME} > /opt/nifi/hostconf/hostname
+          volumeMounts:
+            - name: 'config-data'
+              mountPath: /data/config-data
+            - name: "hostconf"
+              mountPath: /opt/nifi/hostconf
+      containers:
+        - name: server
+          imagePullPolicy: "Always"
+          image: nifi
+          command:
+            - bash
+            - -ce
+            - |
+              set -x
+              scripts_dir='/opt/nifi/scripts'
+
+              prop_replace () {
+                target_file=${NIFI_HOME}/conf/${3:-nifi.properties}
+                echo "updating ${1} in ${target_file}"
+                if egrep "^${1}=" ${target_file} &> /dev/null; then
+                  sed -i -e "s|^$1=.*$|$1=$2|"  ${target_file}
+                else
+                  echo ${1}=${2} >> ${target_file}
+                fi
+              }
+
+              mkdir -p ${NIFI_HOME}/config-data/conf
+              FQDN=$(hostname -f)
+
+              cat "${NIFI_HOME}/conf/nifi.temp" > "${NIFI_HOME}/conf/nifi.properties"
+              
+              if [[ $(grep $(hostname) conf/authorizers.temp) ]]; then
+                cat "${NIFI_HOME}/conf/authorizers.temp" > "${NIFI_HOME}/conf/authorizers.xml"
+              else
+                cat "${NIFI_HOME}/conf/authorizers.empty" > "${NIFI_HOME}/conf/authorizers.xml"
+              fi
+
+              if ! test -f ${NIFI_HOME}/conf/login-identity-providers.xml; then
+                cat "${NIFI_HOME}/conf/login-identity-providers.temp" > "${NIFI_HOME}/conf/login-identity-providers.xml"
+              fi
+
+              if ! test -f /opt/nifi/data/flow.xml.gz && test -f /opt/nifi/data/flow.xml; then
+                gzip /opt/nifi/data/flow.xml
+              fi
+
+              prop_replace nifi.remote.input.host ${FQDN}
+              prop_replace nifi.cluster.node.address ${FQDN}
+              prop_replace nifi.zookeeper.connect.string ${NIFI_ZOOKEEPER_CONNECT_STRING}
+              prop_replace nifi.web.http.host ${FQDN}
+
+              # Update nifi.properties for security properties
+              prop_replace nifi.web.https.host ${FQDN}
+              prop_replace nifi.security.keystoreType jks
+              prop_replace nifi.security.keystore ${NIFI_HOME}/config-data/certs/keystore.jks
+              prop_replace nifi.security.keystorePasswd $(jq -r .keyStorePassword ${NIFI_HOME}/config-data/certs/config.json)
+              prop_replace nifi.security.keyPasswd $(jq -r .keyPassword ${NIFI_HOME}/config-data/certs/config.json)
+              prop_replace nifi.security.truststoreType jks
+              prop_replace nifi.security.truststore ${NIFI_HOME}/config-data/certs/truststore.jks
+              prop_replace nifi.security.truststorePasswd $(jq -r .trustStorePassword ${NIFI_HOME}/config-data/certs/config.json)
+              prop_replace nifi.web.http.network.interface.default "eth0" nifi.properties
+              prop_replace nifi.web.http.network.interface.lo "lo" nifi.properties
+              prop_replace nifi.web.proxy.host $(cat /opt/nifi/hostconf/hostname)
+
+              if [ -n "${NIFI_SENSITIVE_PROPS_KEY}" ]; then
+                  prop_replace 'nifi.sensitive.props.key' "${NIFI_SENSITIVE_PROPS_KEY}"
+              fi
+
+              bin/nifi.sh set-single-user-credentials $(admin_identity) $(admin_password)
+
+              exec bin/nifi.sh run & nifi_pid="$!"
+
+              function offloadNode() {
+                  FQDN=$(hostname -f)
+                  echo "disconnecting node '$FQDN'"
+                  baseUrl=https://${FQDN}:
+
+                  keystore=${NIFI_HOME}/config-data/certs/keystore.jks
+                  keystorePasswd=$(jq -r .keyStorePassword ${NIFI_HOME}/config-data/certs/config.json)
+                  keyPasswd=$(jq -r .keyPassword ${NIFI_HOME}/config-data/certs/config.json)
+                  truststore=${NIFI_HOME}/config-data/certs/truststore.jks
+                  truststorePasswd=$(jq -r .trustStorePassword ${NIFI_HOME}/config-data/certs/config.json)
+
+                  secureArgs=" --truststore ${truststore} --truststoreType JKS --truststorePasswd ${truststorePasswd} \
+                   --keystore ${keystore} --keystoreType JKS --keystorePasswd ${keystorePasswd} --proxiedEntity "$(admin_identity)""
+
+                  echo baseUrl ${baseUrl}
+                  echo "gracefully disconnecting node '$FQDN' from cluster"
+                  ${NIFI_TOOLKIT_HOME}/bin/cli.sh nifi get-nodes -ot json -u ${baseUrl} ${secureArgs} > nodes.json
+                  nnid=$(jq --arg FQDN "$FQDN" '.cluster.nodes[] | select(.address==$FQDN) | .nodeId' nodes.json)
+                  echo "disconnecting node ${nnid}"
+                  ${NIFI_TOOLKIT_HOME}/bin/cli.sh nifi disconnect-node -nnid $nnid -u ${baseUrl} ${secureArgs}
+                  echo ""
+                  echo "get a connected node"
+                  connectedNode=$(jq -r 'first(.cluster.nodes|=sort_by(.address)| .cluster.nodes[] | select(.status=="CONNECTED")) | .address' nodes.json)
+                  baseUrl=https://${connectedNode}:
+                  echo baseUrl ${baseUrl}
+                  echo ""
+                  echo "wait until node has state 'DISCONNECTED'"
+                  while [[ "${node_state}" != "DISCONNECTED" ]]; do
+                      sleep 1
+                      ${NIFI_TOOLKIT_HOME}/bin/cli.sh nifi get-nodes -ot json -u ${baseUrl} ${secureArgs} > nodes.json
+                      node_state=$(jq -r --arg FQDN "$FQDN" '.cluster.nodes[] | select(.address==$FQDN) | .status' nodes.json)
+                      echo "state is '${node_state}'"
+                  done
+                  echo ""
+                  echo "node '${nnid}' was disconnected"
+                  echo "offloading node"
+                  ${NIFI_TOOLKIT_HOME}/bin/cli.sh nifi offload-node -nnid $nnid -u ${baseUrl} ${secureArgs}
+                  echo ""
+                  echo "wait until node has state 'OFFLOADED'"
+                  while [[ "${node_state}" != "OFFLOADED" ]]; do
+                      sleep 1
+                      ${NIFI_TOOLKIT_HOME}/bin/cli.sh nifi get-nodes -ot json -u ${baseUrl} ${secureArgs} > nodes.json
+                      node_state=$(jq -r --arg FQDN "$FQDN" '.cluster.nodes[] | select(.address==$FQDN) | .status' nodes.json)
+                      echo "state is '${node_state}'"
+                  done
+              }
+
+              deleteNode() {
+                  echo "deleting node"
+                  ${NIFI_TOOLKIT_HOME}/bin/cli.sh nifi delete-node -nnid ${nnid} -u ${baseUrl} ${secureArgs}
+                  echo "node deleted"
+              }
+
+              trap 'echo Received trapped signal, beginning shutdown...;offloadNode;./bin/nifi.sh stop;deleteNode;exit 0;' TERM HUP INT;
+              trap ":" EXIT
+
+              echo NiFi running with PID ${nifi_pid}.
+              wait ${nifi_pid}
+
+              /opt/nifi/nifi-toolkit-current/bin/tls-toolkit.sh standalone \
+                -n '$FQDN' \
+                -C '$(admin_identity)' \
+                -o '/opt/nifi/nifi-current/conf/' \
+                -P env:PASS  \
+                -S env:PASS  \
+                --nifiPropertiesFile /opt/nifi/nifi-current/conf/nifi.properties
+              exec bin/nifi.sh run
+          resources:
+            limits:
+              cpu: 3500m
+              memory: 6Gi
+            requests:
+              cpu: '2'
+              memory: 2Gi
+          ports:
+            - containerPort: 9092
+              name: metrics
+              protocol: TCP
+            - containerPort: 9443
+              name: https
+              protocol: TCP
+            - containerPort: 6007
+              name: cluster
+              protocol: TCP
+          env:
+            - name: NIFI_ZOOKEEPER_CONNECT_STRING
+              value: nifi-zookeeper:2181
+            - name: NIFI_SENSITIVE_PROPS_KEY
+              value: "1234567890123456789"
+          readinessProbe:
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            tcpSocket:
+              port: 9443
+          livenessProbe:
+            initialDelaySeconds: 90
+            periodSeconds: 60
+            tcpSocket:
+              port: 9443
+          volumeMounts:
+            - name: "hostconf"
+              mountPath: /opt/nifi/hostconf
+            - name: "data"
+              mountPath: /opt/nifi/data
+            - name: "auth-conf"
+              mountPath: /opt/nifi/nifi-current/auth-conf/
+            - name: "config-data"
+              mountPath: /opt/nifi/nifi-current/config-data
+            - name: "flowfile-repository"
+              mountPath: /opt/nifi/flowfile_repository
+            - name: "content-repository"
+              mountPath: /opt/nifi/content_repository
+            - name: "provenance-repository"
+              mountPath: /opt/nifi/provenance_repository
+            - name: "logs"
+              mountPath: /opt/nifi/nifi-current/logs
+            - name: "bootstrap-conf"
+              mountPath: /opt/nifi/nifi-current/conf/bootstrap.conf
+              subPath: "bootstrap.conf"
+            - name: "nifi-properties"
+              mountPath: /opt/nifi/nifi-current/conf/nifi.temp
+              subPath: "nifi.temp"
+            - name: "authorizers-temp"
+              mountPath: /opt/nifi/nifi-current/conf/authorizers.temp
+              subPath: "authorizers.temp"
+            - name: "authorizers-empty"
+              mountPath: /opt/nifi/nifi-current/conf/authorizers.empty
+              subPath: "authorizers.empty"
+            - name: "bootstrap-notification-services-xml"
+              mountPath: /opt/nifi/nifi-current/conf/bootstrap-notification-services.xml
+              subPath: "bootstrap-notification-services.xml"
+            - name: "login-identity-providers-temp"
+              mountPath: /opt/nifi/nifi-current/conf/login-identity-providers.temp
+              subPath: "login-identity-providers.temp"
+            - name: "state-management-xml"
+              mountPath: /opt/nifi/nifi-current/conf/state-management.xml
+              subPath: "state-management.xml"
+            - name: "zookeeper-properties"
+              mountPath: /opt/nifi/nifi-current/conf/zookeeper.properties
+              subPath: "zookeeper.properties"
+            - name: "flow-content"
+              mountPath: /opt/nifi/data/flow.xml
+              subPath: "flow.xml"
+        - name: app-log
+          imagePullPolicy: "IfNotPresent"
+          image: busybox
+          args: [tail, -n+1, -F, /var/log/nifi-app.log]
+          resources:
+            limits:
+              cpu: 50m
+              memory: 50Mi
+            requests:
+              cpu: 10m
+              memory: 10Mi
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log
+        - name: bootstrap-log
+          imagePullPolicy: "IfNotPresent"
+          image: busybox
+          args: [tail, -n+1, -F, /var/log/nifi-bootstrap.log]
+          resources:
+            limits:
+              cpu: 50m
+              memory: 50Mi
+            requests:
+              cpu: 10m
+              memory: 10Mi
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log
+        - name: user-log
+          imagePullPolicy: "IfNotPresent"
+          image: busybox
+          args: [tail, -n+1, -F, /var/log/nifi-user.log]
+          resources:
+            limits:
+              cpu: 50m
+              memory: 50Mi
+            requests:
+              cpu: 10m
+              memory: 10Mi
+          volumeMounts:
+            - name: logs
+              mountPath: /var/log
+      volumes:
+        - name: "bootstrap-conf"
+          configMap:
+            name: nifi-config
+            items:
+              - key: "bootstrap.conf"
+                path: "bootstrap.conf"
+        - name: "nifi-properties"
+          configMap:
+            name: nifi-config
+            items:
+              - key: "nifi.properties"
+                path: "nifi.temp"
+        - name: "authorizers-temp"
+          configMap:
+            name: nifi-config
+            items:
+              - key: "authorizers.xml"
+                path: "authorizers.temp"
+        - name: "authorizers-empty"
+          configMap:
+            name: nifi-config
+            items:
+              - key: "authorizers-empty.xml"
+                path: "authorizers.empty"
+        - name: "bootstrap-notification-services-xml"
+          configMap:
+            name: nifi-config
+            items:
+              - key: "bootstrap-notification-services.xml"
+                path: "bootstrap-notification-services.xml"
+        - name: "login-identity-providers-temp"
+          configMap:
+            name: nifi-config
+            items:
+              - key: "login-identity-providers.xml"
+                path: "login-identity-providers.temp"
+        - name: "state-management-xml"
+          configMap:
+            name: nifi-config
+            items:
+              - key: "state-management.xml"
+                path: "state-management.xml"
+        - name: "zookeeper-properties"
+          configMap:
+            name: nifi-config
+            items:
+              - key: "zookeeper.properties"
+                path: "zookeeper.properties"
+        - name: "flow-content"
+          configMap:
+            name: nifi-config
+            items:
+              - key: "flow.xml"
+                path: "flow.xml"
+        - name: "hostconf"
+          emptyDir:
+            medium: Memory
+  volumeClaimTemplates:
+    - metadata:
+        name: "config-data"
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: $(storage_class)
+        resources:
+          requests:
+            storage: 100Mi
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+          - "ReadWriteOnce"
+        storageClassName: $(storage_class)
+        resources:
+          requests:
+            storage: 1Gi
+    - metadata:
+        name: flowfile-repository
+      spec:
+        accessModes:
+          - "ReadWriteOnce"
+        storageClassName: $(storage_class)
+        resources:
+          requests:
+            storage: 10Gi
+    - metadata:
+        name: content-repository
+      spec:
+        accessModes:
+          - "ReadWriteOnce"
+        storageClassName: $(storage_class)
+        resources:
+          requests:
+            storage: 10Gi
+    - metadata:
+        name: provenance-repository
+      spec:
+        accessModes:
+          - "ReadWriteOnce"
+        storageClassName: $(storage_class)
+        resources:
+          requests:
+            storage: 10Gi
+    - metadata:
+        name: logs
+      spec:
+        accessModes:
+          - "ReadWriteOnce"
+        storageClassName: $(storage_class)
+        resources:
+          requests:
+            storage: 5Gi
+    - metadata:
+        name: auth-conf
+      spec:
+        accessModes:
+          - "ReadWriteOnce"
+        storageClassName: $(storage_class)
+        resources:
+          requests:
+            storage: 100Mi

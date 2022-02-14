@@ -1,0 +1,25 @@
+---
+varReference:
+  - path: spec/volumeClaimTemplates[]/spec/storageClassName
+    kind: StatefulSet
+  - path: spec/storageClassName
+    kind: PersistentVolumeClaim
+  - path: spec/template/spec/initContainers[]/env[]/value
+    kind: StatefulSet
+  - path: spec/template/spec/containers[]/env[]/value
+    kind: StatefulSet
+  - path: spec/template/spec/initContainers[]/command
+    kind: StatefulSet
+  - path: spec/template/spec/containers/command
+    kind: StatefulSet
+  - path: data/authorizers.xml
+    kind: ConfigMap
+  - path: data/login-identity-providers.xml
+    kind: ConfigMap
+  - path: data/flow.xml
+    kind: ConfigMap
+  - path: data/nifi.properties
+    kind: ConfigMap
+  - path: spec/replicas
+    kind: StatefulSet
+

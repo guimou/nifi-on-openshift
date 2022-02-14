@@ -1,0 +1,3 @@
+- op: replace
+  path: /data/nodes_number
+  value: '3'

@@ -1,0 +1,15 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nifi-ca
+  labels:
+    app: ca-ca
+spec:
+  type: ClusterIP
+  ports:
+    - port: 9090
+      targetPort: 9090
+      name: ca-server
+  selector:
+    app: ca-ca

@@ -1,0 +1,139 @@
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: nifi
+spec:
+  template:
+    spec:
+      containers:
+        - name: server
+          command:
+            - bash
+            - -ce
+            - |
+              set -x
+              scripts_dir='/opt/nifi/scripts'
+
+              prop_replace () {
+                target_file=${NIFI_HOME}/conf/${3:-nifi.properties}
+                echo "updating ${1} in ${target_file}"
+                if egrep "^${1}=" ${target_file} &> /dev/null; then
+                  sed -i -e "s|^$1=.*$|$1=$2|"  ${target_file}
+                else
+                  echo ${1}=${2} >> ${target_file}
+                fi
+              }
+
+              mkdir -p ${NIFI_HOME}/config-data/conf
+              FQDN=$(hostname -f)
+
+              cat "${NIFI_HOME}/conf/nifi.temp" > "${NIFI_HOME}/conf/nifi.properties"
+              
+              if [[ $(grep $(hostname) conf/authorizers.temp) ]]; then
+                cat "${NIFI_HOME}/conf/authorizers.temp" > "${NIFI_HOME}/conf/authorizers.xml"
+              else
+                cat "${NIFI_HOME}/conf/authorizers.empty" > "${NIFI_HOME}/conf/authorizers.xml"
+              fi
+
+              cat "${NIFI_HOME}/conf/login-identity-providers.temp" > "${NIFI_HOME}/conf/login-identity-providers.xml"
+
+              if ! test -f /opt/nifi/data/flow.xml.gz && test -f /opt/nifi/data/flow.xml; then
+                gzip /opt/nifi/data/flow.xml
+              fi
+
+              prop_replace nifi.remote.input.host ${FQDN}
+              prop_replace nifi.cluster.node.address ${FQDN}
+              prop_replace nifi.zookeeper.connect.string ${NIFI_ZOOKEEPER_CONNECT_STRING}
+              prop_replace nifi.web.http.host ${FQDN}
+
+              # Update nifi.properties for security properties
+              prop_replace nifi.web.https.host ${FQDN}
+              prop_replace nifi.security.keystoreType jks
+              prop_replace nifi.security.keystore ${NIFI_HOME}/config-data/certs/keystore.jks
+              prop_replace nifi.security.keystorePasswd $(jq -r .keyStorePassword ${NIFI_HOME}/config-data/certs/config.json)
+              prop_replace nifi.security.keyPasswd $(jq -r .keyPassword ${NIFI_HOME}/config-data/certs/config.json)
+              prop_replace nifi.security.truststoreType jks
+              prop_replace nifi.security.truststore ${NIFI_HOME}/config-data/certs/truststore.jks
+              prop_replace nifi.security.truststorePasswd $(jq -r .trustStorePassword ${NIFI_HOME}/config-data/certs/config.json)
+              prop_replace nifi.web.http.network.interface.default "eth0" nifi.properties
+              prop_replace nifi.web.http.network.interface.lo "lo" nifi.properties
+              prop_replace nifi.web.proxy.host $(cat /opt/nifi/hostconf/hostname)
+
+              if [ -n "${NIFI_SENSITIVE_PROPS_KEY}" ]; then
+                  prop_replace 'nifi.sensitive.props.key' "${NIFI_SENSITIVE_PROPS_KEY}"
+              fi
+
+              # Enable LDAP  
+              prop_replace nifi.security.user.login.identity.provider "ldap-provider"
+              prop_replace nifi.security.identity.mapping.pattern.dn2 "$(ldap_userIdentityMapping)"
+
+              exec bin/nifi.sh run & nifi_pid="$!"
+
+              function offloadNode() {
+                  FQDN=$(hostname -f)
+                  echo "disconnecting node '$FQDN'"
+                  baseUrl=https://${FQDN}:
+
+                  keystore=${NIFI_HOME}/config-data/certs/keystore.jks
+                  keystorePasswd=$(jq -r .keyStorePassword ${NIFI_HOME}/config-data/certs/config.json)
+                  keyPasswd=$(jq -r .keyPassword ${NIFI_HOME}/config-data/certs/config.json)
+                  truststore=${NIFI_HOME}/config-data/certs/truststore.jks
+                  truststorePasswd=$(jq -r .trustStorePassword ${NIFI_HOME}/config-data/certs/config.json)
+
+                  secureArgs=" --truststore ${truststore} --truststoreType JKS --truststorePasswd ${truststorePasswd} \
+                   --keystore ${keystore} --keystoreType JKS --keystorePasswd ${keystorePasswd} --proxiedEntity "$(admin_identity)""
+
+                  echo baseUrl ${baseUrl}
+                  echo "gracefully disconnecting node '$FQDN' from cluster"
+                  ${NIFI_TOOLKIT_HOME}/bin/cli.sh nifi get-nodes -ot json -u ${baseUrl} ${secureArgs} > nodes.json
+                  nnid=$(jq --arg FQDN "$FQDN" '.cluster.nodes[] | select(.address==$FQDN) | .nodeId' nodes.json)
+                  echo "disconnecting node ${nnid}"
+                  ${NIFI_TOOLKIT_HOME}/bin/cli.sh nifi disconnect-node -nnid $nnid -u ${baseUrl} ${secureArgs}
+                  echo ""
+                  echo "get a connected node"
+                  connectedNode=$(jq -r 'first(.cluster.nodes|=sort_by(.address)| .cluster.nodes[] | select(.status=="CONNECTED")) | .address' nodes.json)
+                  baseUrl=https://${connectedNode}:
+                  echo baseUrl ${baseUrl}
+                  echo ""
+                  echo "wait until node has state 'DISCONNECTED'"
+                  while [[ "${node_state}" != "DISCONNECTED" ]]; do
+                      sleep 1
+                      ${NIFI_TOOLKIT_HOME}/bin/cli.sh nifi get-nodes -ot json -u ${baseUrl} ${secureArgs} > nodes.json
+                      node_state=$(jq -r --arg FQDN "$FQDN" '.cluster.nodes[] | select(.address==$FQDN) | .status' nodes.json)
+                      echo "state is '${node_state}'"
+                  done
+                  echo ""
+                  echo "node '${nnid}' was disconnected"
+                  echo "offloading node"
+                  ${NIFI_TOOLKIT_HOME}/bin/cli.sh nifi offload-node -nnid $nnid -u ${baseUrl} ${secureArgs}
+                  echo ""
+                  echo "wait until node has state 'OFFLOADED'"
+                  while [[ "${node_state}" != "OFFLOADED" ]]; do
+                      sleep 1
+                      ${NIFI_TOOLKIT_HOME}/bin/cli.sh nifi get-nodes -ot json -u ${baseUrl} ${secureArgs} > nodes.json
+                      node_state=$(jq -r --arg FQDN "$FQDN" '.cluster.nodes[] | select(.address==$FQDN) | .status' nodes.json)
+                      echo "state is '${node_state}'"
+                  done
+              }
+
+              deleteNode() {
+                  echo "deleting node"
+                  ${NIFI_TOOLKIT_HOME}/bin/cli.sh nifi delete-node -nnid ${nnid} -u ${baseUrl} ${secureArgs}
+                  echo "node deleted"
+              }
+
+              trap 'echo Received trapped signal, beginning shutdown...;offloadNode;./bin/nifi.sh stop;deleteNode;exit 0;' TERM HUP INT;
+              trap ":" EXIT
+
+              echo NiFi running with PID ${nifi_pid}.
+              wait ${nifi_pid}
+
+              /opt/nifi/nifi-toolkit-current/bin/tls-toolkit.sh standalone \
+                -n '$FQDN' \
+                -C '$(admin_identity)' \
+                -o '/opt/nifi/nifi-current/conf/' \
+                -P env:PASS  \
+                -S env:PASS  \
+                --nifiPropertiesFile /opt/nifi/nifi-current/conf/nifi.properties
+              exec bin/nifi.sh run

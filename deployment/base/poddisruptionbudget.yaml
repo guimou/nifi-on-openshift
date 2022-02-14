@@ -1,0 +1,16 @@
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: nifi-zookeeper
+  labels:
+    app.kubernetes.io/name: zookeeper
+    app.kubernetes.io/instance: nifi
+    app.kubernetes.io/component: zookeeper
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: zookeeper
+      app.kubernetes.io/instance: nifi
+      app.kubernetes.io/component: zookeeper
+  maxUnavailable: 1

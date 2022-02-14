@@ -1,0 +1,53 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nifi-ca
+  labels:
+    app: ca-ca
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ca-ca
+  template:
+    metadata:
+      labels:
+        app: ca-ca
+    spec:
+      serviceAccountName: nifi-ca-sa
+      containers:
+        - name: ca
+          imagePullPolicy: "IfNotPresent"
+          image: nifi-toolkit
+          command:
+            - sh
+            - -c
+            - |
+              if [ -f config.json ]; then
+                OPTIONS="--configJson config.json --useConfigJson"
+              fi
+              exec ${NIFI_TOOLKIT_HOME}/bin/tls-toolkit.sh server -c "nifi-ca" -t sixteenCharacters -p 9090 ${OPTIONS}
+          resources:
+            requests:
+              cpu: "0.1"
+              memory: 250Mi
+          ports:
+            - containerPort: 9090
+          livenessProbe:
+            initialDelaySeconds: 90
+            periodSeconds: 60
+            tcpSocket:
+              port: 9090
+          volumeMounts:
+            - mountPath: /ca
+              name: nifi-ca
+              subPath: ca
+          workingDir: /ca
+      terminationGracePeriodSeconds: 0
+      securityContext:
+        {}
+      volumes:
+        - name: nifi-ca
+          persistentVolumeClaim:
+            claimName: nifi-ca

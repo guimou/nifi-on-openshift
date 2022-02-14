@@ -1,0 +1,118 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: nifi-config
+  labels:
+    app: "nifi"
+data:
+  authorizers.xml: >
+    <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <authorizers>
+        <userGroupProvider>
+            <identifier>file-user-group-provider</identifier>
+            <class>org.apache.nifi.authorization.FileUserGroupProvider</class>
+            <property name="Users File">./auth-conf/users.xml</property>
+            <property name="Legacy Authorized Users File"></property>
+            <property name="Initial User Identity 0">CN=nifi-0.nifi-headless.$(namespace).svc.cluster.local, OU=NIFI</property>
+            <property name="Initial User Identity 1">CN=nifi-1.nifi-headless.$(namespace).svc.cluster.local, OU=NIFI</property>
+            <property name="Initial User Identity 2">CN=nifi-2.nifi-headless.$(namespace).svc.cluster.local, OU=NIFI</property>
+            <property name="Initial User Identity 3">CN=nifi-3.nifi-headless.$(namespace).svc.cluster.local, OU=NIFI</property>
+            <property name="Initial User Identity 4">CN=nifi-4.nifi-headless.$(namespace).svc.cluster.local, OU=NIFI</property>
+            <property name="Initial User Identity admin">$(admin_identity)</property>
+        </userGroupProvider>
+
+        <userGroupProvider>
+            <identifier>ldap-user-group-provider</identifier>
+            <class>org.apache.nifi.ldap.tenants.LdapUserGroupProvider</class>
+            <property name="Authentication Strategy">SIMPLE</property>
+            <property name="Manager DN">$(ldap_admin)</property>
+            <property name="Manager Password">$(ldap_pass)</property>
+            <property name="TLS - Keystore">/opt/nifi/nifi-current/conf/nifi-nifi-0.nifi-nifi-headless..svc.cluster.local/keystore.jks</property>
+            <property name="TLS - Keystore Password">env:PASS</property>
+            <property name="TLS - Keystore Type">jks</property>
+            <property name="TLS - Truststore">/opt/nifi/nifi-current/conf/nifi-nifi-0.nifi-nifi-headless..svc.cluster.local/truststore.jks</property>
+            <property name="TLS - Truststore Password">env:PASS</property>
+            <property name="TLS - Truststore Type">JKS</property>
+            <property name="TLS - Client Auth">NONE</property>
+            <property name="TLS - Protocol">TLS</property>
+            <property name="TLS - Shutdown Gracefully">false</property>
+            <property name="Referral Strategy">IGNORE</property>
+            <property name="Connect Timeout">10 secs</property>
+            <property name="Read Timeout">10 secs</property>
+            <property name="Url">$(ldap_host)</property>
+            <property name="Page Size"></property>
+            <property name="Sync Interval">30 mins</property>
+            <property name="User Search Base">$(ldap_searchBase)</property>
+            <property name="User Object Class">person</property>
+            <property name="User Search Scope">ONE_LEVEL</property>
+            <property name="User Search Filter">$(ldap_searchFilter)</property>
+            <property name="User Identity Attribute">$(ldap_userIdentityAttribute)</property>
+            <property name="User Group Name Attribute">memberOf</property>
+            <property name="User Group Name Attribute - Referenced Group Attribute"></property>
+            <property name="Group Search Base"></property>
+            <property name="Group Object Class">groupofnames</property>
+            <property name="Group Search Scope">ONE_LEVEL</property>
+            <property name="Group Search Filter"></property>
+            <property name="Group Name Attribute">cn</property>
+            <property name="Group Member Attribute">member</property>
+            <property name="Group Member Attribute - Referenced User Attribute"></property>
+        </userGroupProvider>
+
+        <userGroupProvider>
+            <identifier>composite-configurable-user-group-provider</identifier>
+            <class>org.apache.nifi.authorization.CompositeConfigurableUserGroupProvider</class>
+            <property name="Configurable User Group Provider">file-user-group-provider</property>
+            <property name="User Group Provider 1">ldap-user-group-provider</property>
+        </userGroupProvider>
+
+        <accessPolicyProvider>
+            <identifier>file-access-policy-provider</identifier>
+            <class>org.apache.nifi.authorization.FileAccessPolicyProvider</class>
+            <property name="User Group Provider">composite-configurable-user-group-provider</property>
+            <property name="Authorizations File">./auth-conf/authorizations.xml</property>
+            <property name="Initial Admin Identity">$(admin_identity)</property>
+            <property name="Legacy Authorized Users File"></property>
+            <property name="Node Identity 0">CN=nifi-0.nifi-headless.$(namespace).svc.cluster.local, OU=NIFI</property>
+            <property name="Node Identity 1">CN=nifi-1.nifi-headless.$(namespace).svc.cluster.local, OU=NIFI</property>
+            <property name="Node Identity 2">CN=nifi-2.nifi-headless.$(namespace).svc.cluster.local, OU=NIFI</property>
+            <property name="Node Identity 3">CN=nifi-3.nifi-headless.$(namespace).svc.cluster.local, OU=NIFI</property>
+            <property name="Node Identity 4">CN=nifi-4.nifi-headless.$(namespace).svc.cluster.local, OU=NIFI</property>
+        </accessPolicyProvider>
+
+        <authorizer>
+            <identifier>managed-authorizer</identifier>
+            <class>org.apache.nifi.authorization.StandardManagedAuthorizer</class>
+            <property name="Access Policy Provider">file-access-policy-provider</property>
+        </authorizer>
+
+    </authorizers>
+
+  login-identity-providers.xml: |
+    <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+    <loginIdentityProviders>
+        <provider>
+        <identifier>ldap-provider</identifier>
+        <class>org.apache.nifi.ldap.LdapProvider</class>
+        <property name="Authentication Strategy">SIMPLE</property>
+        <property name="Manager DN">$(ldap_admin)</property>
+        <property name="Manager Password">$(ldap_pass)</property>
+        <property name="TLS - Keystore">/opt/nifi/nifi-current/conf/nifi-nifi-0.nifi-nifi-headless.ccfd.svc.cluster.local/keystore.jks</property>
+        <property name="TLS - Keystore Password"></property>
+        <property name="TLS - Keystore Type">JKS</property>
+        <property name="TLS - Truststore">/opt/nifi/nifi-current/conf/nifi-nifi-0.nifi-nifi-headless.ccfd.svc.cluster.local/truststore.jks</property>
+        <property name="TLS - Truststore Password"></property>
+        <property name="TLS - Truststore Type">JKS</property>
+        <property name="TLS - Client Auth">NONE</property>
+        <property name="TLS - Protocol">TLS</property>
+        <property name="TLS - Shutdown Gracefully">false</property>
+        <property name="Referral Strategy">FOLLOW</property>
+        <property name="Connect Timeout">10 secs</property>
+        <property name="Read Timeout">10 secs</property>
+        <property name="Url">$(ldap_host)</property>
+        <property name="User Search Base">$(ldap_searchBase)</property>
+        <property name="User Search Filter">($(ldap_userIdentityAttribute)={0})</property>
+        <property name="Identity Strategy">USE_USERNAME</property>
+        <property name="Authentication Expiration">12 hours</property>
+    </provider>
+    </loginIdentityProviders>
