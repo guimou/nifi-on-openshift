@@ -1,12 +1,14 @@
 # Apache NiFi on OpenShift
 
+![NiFi on OpenShift](doc/img/nifi-openshift.png)
+
 Apache NiFi supports powerful and scalable directed graphs of data routing, transformation, and system mediation logic.
 Ref: <https://nifi.apache.org/>
 
-This repo provides tools and instructions for deploying and using Apache Nifi on OpenShift:
+This repo provides tools and instructions for deploying and using Apache Nifi on OpenShift, witht the following characteristics:
 
 * **UBI8-OpenJDK11 base images** for all NiFi components (main app, registry,toolkit).
-* Container images conform to OpenShift standards, **without requiring scc** (standard provided images had to run as AnyUID).
+* Container images conform to OpenShift standards, especially **without requiring scc** (standard provided images had to run as AnyUID).
 * External Zookeer deployed automatically (Bitnami Zookeeper images are used).
 * Cluster-mode enabled, with a default to 3 NiFi nodes (1 to 5 nodes available as overlays).
 * Registry enabled to manage and version workflows.
