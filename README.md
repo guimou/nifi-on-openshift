@@ -51,8 +51,9 @@ Alternative method: with a recent version of OpenShift (=>4.8), you can also do 
 The base configuration deploys a NiFi cluster with a SingleUser authentication mechanism, and 3 nodes. You can modify the following parameters in `params.env`:
 
 * `storage_class`: storage class to use for the Persistent Volumes that are created.
-* `admin_identity`: Username for the SingleUser authentication.
-* `admin_password`: Password (**12 characters minimum, otherwise the deployment will fail!**) for the SingleUser authentication.
+* `admin_identity`: username for the SingleUser authentication.
+* `admin_password`: password (**12 characters minimum, otherwise the deployment will fail!**) for the SingleUser authentication.
+* `certificate_store_password`: the password used for the KeyStore and TrustStore (needed to create SSL contexts for components like listenHTTP)
 * `uid`: a uid that will be used by the root schema and base flow of the installation (you can easily generate one on <https://www.uuidgenerator.net/version4>).
 
 NOTE: don't modify the nodes_number directly in the `params.env` file! Use one of the overlays to modify the number of nodes.
@@ -91,3 +92,84 @@ Supplemental parameters to change in `params.env`:
 * `ldap_userIdentityMapping`: Allows to keep only the username (or parts of it) to create the account in NiFi.
 
 Full reference: <https://nifi.apache.org/docs/nifi-docs/html/administration-guide.html#ldap_login_identity_provider>
+
+## Other recipes
+
+### HTTP Listeners
+
+The ListenHTTP component (like others) can open an http(s) port where you can send information directly into a workflow. To enable this functionality, you can apply the following recipe.
+
+1. Modify the Nifi StatefulSet at the container definition level to add the ports you want to use for the listener(s). Example:
+
+```yaml
+ports:
+    - name: metrics
+        containerPort: 9092
+        protocol: TCP
+    - name: https
+        containerPort: 9443
+        protocol: TCP
+    - name: cluster
+        containerPort: 6007
+        protocol: TCP
+    - name: httplistener
+        containerPort: 8888
+        protocol: TCP
+```
+
+2. Create a Service to connect to the pods on this port. Example:
+
+```yaml
+kind: Service
+apiVersion: v1
+metadata:
+  name: nifi-httplistener
+  namespace: nifi
+spec:
+  ports:
+    - name: httplistener
+      protocol: TCP
+      port: 8888
+      targetPort: 8888
+  selector:
+    app: nifi
+```
+
+3. Create a Route to connect to the service, with SSL or not. SSL in this example:
+
+```yaml
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: nifi-httplistener
+  namespace: nifi
+spec:
+  to:
+    kind: Service
+    name: nifi-httplistener
+  port:
+    targetPort: httplistener
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None
+```
+
+4. In NiFi, create the listener, configured on the port you defined at 1.
+
+![listenhttp](doc/img/listenhttp.png)
+
+5. (Optional) When using SSL, you have to define an SSL Context Service that will use the local certificates created during the deployment.
+
+![sslcontextservice](doc/img/sslcontext.png)
+
+The following properties are used. All the stores have the same password, set at deployment, to allow the configuration of the service, which is unique in the cluster, to work on all nodes.
+
+* Keystore Filename: `/opt/nifi/nifi-current/config-data/certs/keystore.jks`
+* Keystore Password: the `certificate_store_password` parameter you set in the `params.env` file for deployment.
+* Key Password: the `certificate_store_password` parameter you set in the `params.env` file for deployment.
+* Keystore Type: `JKS`
+* Trustore Filename: `/opt/nifi/nifi-current/config-data/certs/truststore.jks`
+* Truststore Password: the `certificate_store_password` parameter you set in the `params.env` file for deployment.
+* Trustore Type: `JKS`
+* TLS Protocol: `TLS`

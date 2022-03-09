@@ -1,7 +1,7 @@
 ---
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: test-kustom
+namespace: nifi
 resources:
   - poddisruptionbudget.yaml
   - serviceaccount-registry.yaml
@@ -62,6 +62,13 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.admin_password
+  - name: certificate_store_password
+    objref:
+      kind: ConfigMap
+      name: nifi-parameters
+      apiVersion: v1
+    fieldref:
+      fieldpath: data.certificate_store_password
   - name: nodes_number
     objref:
       kind: ConfigMap
