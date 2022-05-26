@@ -1,1 +1,1 @@
-docker build --build-arg MIRROR=https://dlcdn.apache.org --build-arg NIFI_REGISTRY_BINARY_URL=nifi/1.16.1/nifi-registry-1.16.1-bin.tar.gz -t nifi-registry:1.16.1 .
+docker build --build-arg MIRROR=https://dlcdn.apache.org --build-arg NIFI_REGISTRY_BINARY_URL=nifi/1.16.2/nifi-registry-1.16.2-bin.tar.gz -t nifi-registry:1.16.2 .

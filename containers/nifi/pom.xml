@@ -26,7 +26,7 @@
         <docker.maintainer><![CDATA[Apache NiFi <dev@nifi.apache.org>]]></docker.maintainer>
         <!-- files need to exist at https://archive.apache.org/dist/nifi/${docker.nifi.version}/nifi-[toolkit-]${docker.nifi.version}-bin.zip
             so this version needs to be *before* the current ${project.version} -->
-        <docker.nifi.version>1.16.1</docker.nifi.version>
+        <docker.nifi.version>1.16.2</docker.nifi.version>
     </properties>
 
     <profiles>

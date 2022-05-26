@@ -1,1 +1,2 @@
-./DockerBuild.sh 1001 0 https://dlcdn.apache.org/ https://dlcdn.apache.org/ 1.16.1
+Command to build from a mirror repo:
+./DockerBuild.sh 1001 0 https://dlcdn.apache.org/ https://dlcdn.apache.org/ 1.16.2
