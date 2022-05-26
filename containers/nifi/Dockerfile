@@ -16,7 +16,7 @@
 # under the License.
 #
 ARG IMAGE_NAME=registry.access.redhat.com/ubi8/openjdk-11
-ARG IMAGE_TAG=1.10
+ARG IMAGE_TAG=1.13-1
 FROM ${IMAGE_NAME}:${IMAGE_TAG}
 ARG MAINTAINER="Apache NiFi <dev@nifi.apache.org>"
 LABEL maintainer="${MAINTAINER}"
@@ -24,7 +24,7 @@ LABEL site="https://nifi.apache.org"
 
 ARG UID=1001
 ARG GID=0
-ARG NIFI_VERSION=1.15.2
+ARG NIFI_VERSION=1.16.1
 ARG BASE_URL=https://archive.apache.org/dist
 ARG MIRROR_BASE_URL=${MIRROR_BASE_URL:-${BASE_URL}}
 ARG DISTRO_PATH=${DISTRO_PATH:-${NIFI_VERSION}}
