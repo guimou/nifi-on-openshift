@@ -173,13 +173,13 @@ images:
     newTag: 3.16.0
   - name: nifi
     newName: quay.io/rh-data-services/nifi-openshift
-    newTag: 1.16.1
+    newTag: 1.16.2
   - name: nifi-registry
     newName: quay.io/rh-data-services/nifi-registry-openshift
-    newTag: 1.16.1
+    newTag: 1.16.2
   - name: nifi-toolkit
     newName: quay.io/rh-data-services/nifi-toolkit-openshift
-    newTag: 1.16.1
+    newTag: 1.16.2
   - name: zookeeper
     newName: bitnami/zookeeper
     newTag: 3.7.1
