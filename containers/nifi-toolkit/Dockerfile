@@ -21,7 +21,7 @@ LABEL maintainer "Apache NiFi <dev@nifi.apache.org>"
 
 ARG UID=1001
 ARG GID=0
-ARG NIFI_TOOLKIT_VERSION=1.15.2
+ARG NIFI_TOOLKIT_VERSION=1.16.1
 ARG MIRROR=https://archive.apache.org/dist
 
 ENV NIFI_TOOLKIT_BASE_DIR=/opt/nifi-toolkit

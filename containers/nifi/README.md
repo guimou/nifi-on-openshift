@@ -40,5 +40,3 @@ NIFI_BASE_DIR=/opt/nifi
 ```
 docker run --rm --entrypoint /bin/bash apache/nifi:1.12.0 -c 'readlink /opt/nifi/nifi-1.12.0'                                   /opt/nifi/nifi-current
 ```
-
-
