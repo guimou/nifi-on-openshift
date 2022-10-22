@@ -356,6 +356,8 @@ spec:
               mountPath: /opt/nifi/provenance_repository
             - name: "logs"
               mountPath: /opt/nifi/nifi-current/logs
+            - name: "extensions"
+              mountPath: /opt/nifi/nifi-current/extension              
             - name: "bootstrap-conf"
               mountPath: /opt/nifi/nifi-current/conf/bootstrap.conf
               subPath: "bootstrap.conf"
@@ -537,6 +539,15 @@ spec:
         resources:
           requests:
             storage: 5Gi
+    - metadata:
+        name: extensions
+      spec:
+        accessModes:
+          - "ReadWriteOnce"
+        storageClassName: $(storage_class)
+        resources:
+          requests:
+            storage: 20Gi            
     - metadata:
         name: auth-conf
       spec:
