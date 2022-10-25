@@ -59,6 +59,13 @@ spec:
         - name: cert-request
           imagePullPolicy: "IfNotPresent"
           image: nifi-toolkit
+          resources:
+            requests:
+              cpu: 1
+              memory: 512Mi
+            limits:
+              cpu: 1
+              memory: 512Mi
           command:
             - bash
             - -c
@@ -300,8 +307,8 @@ spec:
               wait ${nifi_pid}
 
               /opt/nifi/nifi-toolkit-current/bin/tls-toolkit.sh standalone \
-                -n '$FQDN' \
-                -C '$(admin_identity)' \
+                -n '$(hostname -f)' \
+                -C '$(admin_identity),OU=NIFI' \
                 -o '/opt/nifi/nifi-current/conf/' \
                 -P env:PASS  \
                 -S env:PASS  \
@@ -357,7 +364,7 @@ spec:
             - name: "logs"
               mountPath: /opt/nifi/nifi-current/logs
             - name: "extensions"
-              mountPath: /opt/nifi/nifi-current/extension              
+              mountPath: /opt/nifi/nifi-current/extensions              
             - name: "bootstrap-conf"
               mountPath: /opt/nifi/nifi-current/conf/bootstrap.conf
               subPath: "bootstrap.conf"
