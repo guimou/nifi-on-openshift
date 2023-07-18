@@ -33,6 +33,10 @@ configMapGenerator:
   - name: nifi-parameters
     envs:
       - params.env
+secretGenerator:
+  - name: nifi-credentials
+    envs:
+      - credentials.env
 vars:
   - name: namespace
     objref:
@@ -55,20 +59,6 @@ vars:
       apiVersion: v1
     fieldref:
       fieldpath: data.admin_identity
-  - name: admin_password
-    objref:
-      kind: ConfigMap
-      name: nifi-parameters
-      apiVersion: v1
-    fieldref:
-      fieldpath: data.admin_password
-  - name: certificate_store_password
-    objref:
-      kind: ConfigMap
-      name: nifi-parameters
-      apiVersion: v1
-    fieldref:
-      fieldpath: data.certificate_store_password
   - name: nodes_number
     objref:
       kind: ConfigMap

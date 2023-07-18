@@ -35,6 +35,7 @@ Here are the steps to follow (from the base folder `deployment`):
 * Create the namespace where you want to deploy Apache Nifi (defaulted to `nifi` in the configuration files).
 * If you chose a namespace different than `nifi`, edit the file `base/kustomization.yaml` and replace the `namespace` variable to match this name.
 * Copy the file `base/params.env.example` to `base/params.env` and fill in the information (description for each variable below).
+* Copy the file `base/credentials.env.example` to `base/credentials.env` and fill in the information (description for each variable below).
 * Switch to the `base` folder or to the **overlay** you want to use.
 * Use kustomize to build the deployment:
 
@@ -51,10 +52,13 @@ NOTE: with a recent version of OpenShift (=>4.8), you can also do directly `oc a
 The base configuration deploys a NiFi cluster with a SingleUser authentication mechanism, and 3 nodes. You can modify the following parameters in `params.env`:
 
 * `storage_class`: storage class to use for the Persistent Volumes that are created.
-* `admin_identity`: username for the SingleUser authentication.
-* `admin_password`: password (**12 characters minimum, otherwise the deployment will fail!**) for the SingleUser authentication.
-* `certificate_store_password`: the password used for the KeyStore and TrustStore (needed to create SSL contexts for components like listenHTTP)
 * `uid`: a uid that will be used by the root schema and base flow of the installation (you can easily generate one on <https://www.uuidgenerator.net/version4>).
+* `admin_identity`: username for the SingleUser authentication.
+
+Further, you can modify the following credentials in `credentials.env`:
+
+* `NIFI_ADMIN_PASSWORD`: password (**12 characters minimum, otherwise the deployment will fail!**) for the SingleUser authentication.
+* `NIFI_CERTIFICATE_STORE_PASSWORD`: the password used for the KeyStore and TrustStore (needed to create SSL contexts for components like listenHTTP)
 
 NOTE: don't modify the nodes_number directly in the `params.env` file! Use one of the overlays to modify the number of nodes (yeah, I know, that's a limitation of kustomize).
 
